@@ -1232,6 +1232,46 @@ $app->get('/api/hmo/get/enrolee/{type}/{cardSerial}/{orgID}', function(Request $
 	return $dbn->responseFormat($resp,$g);
 });
 
+
+$app->post('/api/hmo/create/enrolee', function(Request $req, Response $resp){
+	// handle single input with single file upload
+	$dbn = new db();
+	try{
+		$uploadedFiles = $req->getUploadedFiles();
+		$uploadedFile = $uploadedFiles['enrolee'];
+		if ($uploadedFile->getError() === UPLOAD_ERR_OK) {
+			$row = 1;
+			$fileX = json_encode($uploadedFile);
+			$fileX = json_decode($fileX);
+			if (($handle = fopen($fileX->file, "r")) !== FALSE) {
+				while (($data = fgetcsv($handle, 1000, ",")) !== FALSE) {
+					$num = count($data);
+					echo "<p> $num fields in line $row: <br /></p>\n";
+
+					$row++;
+					for ($c=0; $c < $num; $c++) {
+					//	echo $data[$c] . "<br />\n";
+					}
+				}
+				echo $row;
+				fclose($handle);
+				$g = '{"error":{"message":"", "status":"0"},"success":{"message":"Organization created","status":"200"}, "content":{"filename":""}}';
+			}else{
+				$g = '{"error":{"message":"The file is invalid", "status":"1"}}';
+			}
+			//$filename = moveUploadedFile($directory, $uploadedFile);
+			//$g = '{"error":{"message":"", "status":"0"},"success":{"message":"Organization created","status":"200"}, "content":{"filename":""}}';
+		}else{
+			$g = '{"error":{"message":"The file is invalid", "status":"1"}}';
+		}
+	}catch(Exception $e){
+		$e = $dbn->cleanException($e->getMessage());
+		$g = '{"error":{"message":"An error:\''.$e.'\' Ocurred", "status":"1"}}';
+	}
+	return $dbn->responseFormat($resp,$g);
+});
+
+
 $app->options('/{routes:.+}', function ($request, $response, $args) {
 	$g = '{"error":{"message":"The Method may not have been implemented", "status":"1"}}';
 	return $response
@@ -1242,41 +1282,4 @@ $app->options('/{routes:.+}', function ($request, $response, $args) {
 	->withHeader('Access-Control-Allow-Methods', array('GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'))
    	->write($g);
 });
-/*$app->post('/api/hmo/create/enrolee', function(Request $req, Response $resp){
-		// handle single input with single file upload
-		$dbn = new db();
-		try{
-			$uploadedFiles = $req->getUploadedFiles();
-			$uploadedFile = $uploadedFiles['enrolee'];
-			if ($uploadedFile->getError() === UPLOAD_ERR_OK) {
-				$row = 1;
-				$fileX = json_encode($uploadedFile);
-				$fileX = json_decode($fileX);
-				if (($handle = fopen($fileX->file, "r")) !== FALSE) {
-					while (($data = fgetcsv($handle, 1000, ",")) !== FALSE) {
-						$num = count($data);
-						echo "<p> $num fields in line $row: <br /></p>\n";
-
-						$row++;
-						for ($c=0; $c < $num; $c++) {
-						//	echo $data[$c] . "<br />\n";
-						}
-					}
-					echo $row;
-					fclose($handle);
-					$g = '{"error":{"message":"", "status":"0"},"success":{"message":"Organization created","status":"200"}, "content":{"filename":""}}';
-				}else{
-					$g = '{"error":{"message":"The file is invalid", "status":"1"}}';
-				}
-				//$filename = moveUploadedFile($directory, $uploadedFile);
-				//$g = '{"error":{"message":"", "status":"0"},"success":{"message":"Organization created","status":"200"}, "content":{"filename":""}}';
-			}else{
-				$g = '{"error":{"message":"The file is invalid", "status":"1"}}';
-			}
-		}catch(Exception $e){
-			$e = $dbn->cleanException($e->getMessage());
-			$g = '{"error":{"message":"An error:\''.$e.'\' Ocurred", "status":"1"}}';
-		}
-		return $dbn->responseFormat($resp,$g);
-});*/
 ?>
