@@ -496,6 +496,217 @@ $app->post('/api/hmo/create/organization', function(Request $req, Response $resp
 	if(!($validJson === NULL)){
 		try{
 			$data = $validJson->data;
+			$username = $data->username;
+			$publicKey = $data->publicKey;
+			$hmo = $data->hmoID;
+			if(isset($username) and isset($publicKey)){
+				if($dbn->hmoStaffExist($username, $publicKey, $hmo)){
+					if(isset($data->name) and isset($data->address) and isset($data->phone) and isset($data->email) and isset($data->state) and isset($data->LG)){
+						if(!$dbn->isExist("select*from organizations where email = '$data->email'")){
+							$q = "insert into organizations (name, address, phone, email, dateAdded, state, LG, HMOID) VALUES (:name, :address, :phone, :email, :dateAdded, :state, :LG, :hmoid)";
+							$mcrypto = new mcrypt();
+							$ftoken = $mcrypto->mCryptThis(time()*rand(100000,2000000));
+							$Qin = $dbn->connect();
+							$f = $Qin->prepare($q);
+							$f->bindParam(":name", $data->name);
+							$f->bindParam(":address", $data->address);
+							$f->bindParam(":phone", $data->phone);
+							$f->bindParam(":email", $data->email);
+							$f->bindParam(":dateAdded", $data->dateAdded);
+							$f->bindParam(":state", $data->state);
+							$f->bindParam(":LG", $data->LG);
+							$f->bindParam(":hmoid", $hmo);
+							$f->execute();
+							if(!$dbn->isExist("select*from organizations where email = '$data->email'")){
+								$q = "insert into organizationstaff (username, password, HMOID, orgID) values (:username, :password, :hmoid, :orgID)";
+								$key = ' FitSKchgoHOOKing666';
+								$string = $key.'34iIlm'.$data->phone.'io9m-';
+								$encryptedPassword = hash('sha256', $string);
+								$f = $Qin->prepare($q);
+								$f->bindParam(":username", $data->email);
+								$f->bindParam(":password", $encryptedPassword);
+								$f->bindParam(":hmoid", $hmo);
+								$f->bindParam(":orgID", $Qin->lastInsertId());
+								$f->execute();
+								$g = '{"error":{"message":"", "status":"0"},"success":{"message":"Organization created","status":"200"}, "content":{"username":"'.$data->email.'", "password":"'.$data->phone.'"}}';
+							}else{
+								$g = '{"error":{"message":"The email exists", "status":"1"}}';
+							}							
+						}else{
+							$g = '{"error":{"message":"The email exists", "status":"1"}}';
+						}
+					}else{
+						$g = '{"error":{"message":"All Profile fields are required", "status":"1"}}';
+					}
+				}else{
+					$g = '{"error":{"message":"The HMO Staff profile have not been found", "status":"1"}}';
+				}
+			}else{
+				$g = '{"error":{"message":"All Profile fields are required", "status":"1"}}';
+			}
+		}catch(PDOException $e){
+			$e = $dbn->cleanException($e->getMessage());
+			$g = '{"error":{"message":"An error:'.$e.' Ocurred", "status":"1"}}';
+		}
+	}else{
+		$g = '{"error":{"message":"The parameter is not a valid object", "status":"1"}}';
+	}
+	return $dbn->responseFormat($resp,$g);
+});
+
+$app->post('/api/hmo/create/enrolee', function(Request $req, Response $resp){
+	$json = $req->getParsedBody();
+	$json = isset($json)? $json : $req->getBody();
+	$dbn = new db();
+	$validJson = $dbn->jsonFormat($json);
+	if(!($validJson === NULL)){
+		$data = $validJson->data;
+		$username = $data->username;
+		$publicKey = $data->publicKey;
+		$hmo = $data->hmoID;
+		$orgID = $data->orgID;
+		$enrolee = $data->enrolee;
+		$key = ' FitSKchgoHOOKing666';
+		if(isset($username) and isset($publicKey) and isset($hmo) and isset($orgID)){
+			if($dbn->isExist("select * from organizationstaff where username = '$username' and publicKey = '$publicKey' and HMOID = '$hmo' and orgID = '$orgID'")){
+				if(is_array($enrolee)){
+					$statuses = array("failed"=>[], "successful"=>[], "duplicate"=>[], "failedLog"=>[], "duplicateLog"=>[]);
+					$counter = 0;
+					while($counter < count($enrolee)){
+						$fullname = $enrolee[$counter]->fullname;
+						$gender = $enrolee[$counter]->gender;
+						$birthday = $enrolee[$counter]->birthday;
+						$planID = $enrolee[$counter]->planID;
+						$providerID = $enrolee[$counter]->providerID;
+						$username = $enrolee[$counter]->username;
+						$password = $enrolee[$counter]->password;
+						$string = $key.'34iIlm'.$password.'io9m-';
+						$encryptedPassword = hash('sha256', $string);
+						$cardSerial = $enrolee[$counter]->cardSerial;
+						$address = $enrolee[$counter]->address;
+						$state = $enrolee[$counter]->state;
+						$LG = $enrolee[$counter]->LG;
+						$email = $enrolee[$counter]->email;
+						$phone = $enrolee[$counter]->phone;
+						$nextOfKin  = $enrolee[$counter]->nextOfKin;
+						$surgery = $enrolee[$counter]->surgery;
+						$existingSurgery = $enrolee[$counter]->existingSurgery;
+						$biometric = $enrolee[$counter]->biometric;
+						$enroleeID = $enrolee[$counter]->enroleeID;
+						$dateCreated = time();
+						if(isset($cardSerial) and $dbn->isExist("select*from cards where cardSerial = '$cardSerial' and HMOID = '$hmo'")){
+							if(isset($enroleeID) and !$dbn->isExist("select*from enrolee where enroleeID = '$enroleeID'")){
+								if(isset($fullname) and isset($phone)){
+									if(!$dbn->isExist("select*from enrolee where cardSerial = '$cardSerial'")){
+										try{
+											$sql = "INSERT INTO `enrolee` (`name`, `gender`, `birthday`, `dependents`, `planID`, `organizationID`, `HMOID`, `username`, `passwords`, `cardSerial`, `address`, `state`, `LG`, `enroleeID`, `email`, `phone`, `nextOfKin`, `surgery`, `existingCondition`, `biometric`, dateCreated) VALUES (:name, :gender, :birthday, :planID, :orgID, :HMOID, :username, :password, :cardSerial, :address, :state, :LG, :enroleeID, :email, :phone,  :nextofkin, :surgery, :existingcond, :biometric, :dateCreated)";
+											$qi = $dbn->connect();
+											$fa = $qi->prepare($sql);										
+											$fa->bindValue(':name', $fullname);
+											$fa->bindValue(':gender', $gender);
+											$fa->bindValue(':birthday', $birthday);
+											$fa->bindValue(':planID', $planID);
+											$fa->bindValue(':orgID', $orgID);
+											$fa->bindValue(':HMOID', $hmo);
+											$fa->bindValue(':username', $username);
+											$fa->bindValue(':password', $encryptedPassword);
+											$fa->bindValue(':cardSerial', $cardSerial);
+											$fa->bindValue(':address', $address);
+											$fa->bindValue(':state', $state);
+											$fa->bindValue(':LG', $LG);
+											$fa->bindValue(':enroleeID', $enroleeID);
+											$fa->bindValue(':email', $email);
+											$fa->bindValue(':phone', $phone);
+											$fa->bindValue(':nextofkin', $nextOfKin);
+											$fa->bindValue(':surgery', $surgery);
+											$fa->bindValue(':existingcond', $existingSurgery);
+											$fa->bindValue(':biometric', $biometric);
+											$fa->bindValue(':dateCreated', $dateCreated);
+											$fa->execute();
+											array_push($statuses["successful"], $enroleeID);
+										}catch(PDOException $e){
+											$e = $dbn->cleanException($e->getMessage());
+											array_push($statuses["failed"], $enroleeID);
+											array_push($statuses["failedLog"], $e);											
+										}
+									}else{
+										array_push($statuses["duplicate"], $enroleeID);
+										array_push($statuses["duplicateLog"], "The cardSerial exists for a customer");
+									}
+								}else{
+									array_push($statuses["failed"], $enroleeID);
+									array_push($statuses["failedLog"], "Some of the required fields are required");
+								}
+							}else{
+								array_push($statuses["duplicate"], $enroleeID);
+								array_push($statuses["duplicateLog"], "An enrolee with the ID exist");
+							}
+						}else{
+							array_push($statuses["failed"], $enroleeID);
+							array_push($statuses["failedLog"], "The cardSerial is invalid");
+						}
+						$counter++;
+					}
+					$statuses = json_encode($statuses);
+					$g = '{"error":{"message":"","status":"0"}, "success":{"message":"The creation has been completed","code":"200"}, "content":{"data":'.$statuses.'}}';
+				}else{
+					$g = '{"error":{"message":"The enrolee data have not been found", "status":"1"}}';
+				}
+			}else{
+				$g = '{"error":{"message":"The organization profile have not been found", "status":"1"}}';	
+			}
+		}else{
+			$g = '{"error":{"message":"All Profile fields are required", "status":"1"}}';
+		}
+	}else{
+		$g = '{"error":{"message":"The parameter is not a valid object", "status":"1"}}';
+	}
+/*	// handle single input with single file upload
+	$dbn = new db();
+	try{
+		$uploadedFiles = $req->getUploadedFiles();
+		$uploadedFile = $uploadedFiles['enrolee'];
+		if ($uploadedFile->getError() === UPLOAD_ERR_OK) {
+			$row = 1;
+			$fileX = json_encode($uploadedFile);
+			$fileX = json_decode($fileX);
+			if (($handle = fopen($fileX->file, "r")) !== FALSE) {
+				while (($data = fgetcsv($handle, 1000, ",")) !== FALSE) {
+					$num = count($data);
+					echo "<p> $num fields in line $row: <br /></p>\n";
+
+					$row++;
+					for ($c=0; $c < $num; $c++) {
+					//	echo $data[$c] . "<br />\n";
+					}
+				}
+				echo $row;
+				fclose($handle);
+				$g = '{"error":{"message":"", "status":"0"},"success":{"message":"Organization created","status":"200"}, "content":{"filename":""}}';
+			}else{
+				$g = '{"error":{"message":"The file is invalid", "status":"1"}}';
+			}
+			//$filename = moveUploadedFile($directory, $uploadedFile);
+			//$g = '{"error":{"message":"", "status":"0"},"success":{"message":"Organization created","status":"200"}, "content":{"filename":""}}';
+		}else{
+			$g = '{"error":{"message":"The file is invalid", "status":"1"}}';
+		}
+	}catch(Exception $e){
+		$e = $dbn->cleanException($e->getMessage());
+		$g = '{"error":{"message":"An error:\''.$e.'\' Ocurred", "status":"1"}}';
+	}*/
+	return $dbn->responseFormat($resp,$g);
+});
+
+$app->post('/api/hmo/create/organization', function(Request $req, Response $resp){
+	$json = $req->getParsedBody();
+	$json = isset($json)? $json : $req->getBody();
+	$dbn = new db();
+	$validJson = $dbn->jsonFormat($json);
+	if(!($validJson === NULL)){
+		try{
+			$data = $validJson->data;
+			
 			if(isset($data->username) and isset($data->publicKey) and isset($data->hmoID)){
 				if($dbn->hmoStaffExist($data->username, $data->publicKey, $data->hmoID)){
 					if(isset($data->name) and isset($data->address) and isset($data->phone) and isset($data->email) and isset($data->state) and isset($data->LG) and isset($data->hmoID)){
@@ -676,6 +887,117 @@ $app->post('/api/hmo/concludetransaction', function(Request $req, Response $resp
 	return $dbn->responseFormat($resp,$g);
 });
 
+$app->post('/api/hmo/sync/encounter', function(Request $req, Response $resp){
+	$json = $req->getParsedBody();
+	$json = isset($json)? $json : $req->getBody();
+	$dbn = new db();
+	$validJson = $dbn->jsonFormat($json);
+	if(!($validJson === NULL)){
+		$data = $validJson->data;
+		$username = $data->username;
+		$publicKey = $data->publicKey;
+		$providerID = $data->providerID;
+		$encounter = $data->encounter;
+		$transBatch = time()."/".$providerID."/".rand(23456,989999);
+		$syncDate = time();
+		if(isset($username) and isset($publicKey) and isset($hmo) and isset($providerID)){
+			if($dbn->isExist("select * from provider where username = '$username' and publicKey = '$publicKey' and providerID = '$hmo'")){
+				if(is_array($encounter)){
+					$statuses = array("failed"=>[], "successful"=>[], "duplicate"=>[], "failedLog"=>[], "duplicateLog"=>[]);
+					$counter = 0;
+					$t = "INSERT INTO transbatch (totalPrice, providerID, transDate, transID) values (0, :providerID, :transDate, :transID)";
+					try{
+						$qi = $dbn->connect();
+						$fa = $qi->prepare($t);										
+						$fa->bindValue(':providerID', $providerID);
+						$fa->bindValue(':transDate', $syncDate);
+						$fa->bindValue(':transID', $transBatch);
+						$fa->execute();
+						while($counter < count($encounter)){
+							$enroleeID = $encounter[$counter]->enroleeID;
+							$price = $encounter[$counter]->amount;
+							$planID = $encounter[$counter]->planID;
+							$PACode = $encounter[$counter]->PaCode;
+							$transDate = $encounter[$counter]->transDate;
+							$cardSerial = $encounter[$counter]->cardSerial;
+							$orgID = $encounter[$counter]->orgID;
+							$summary = $encounter[$counter]->summary;
+							$comment = $encounter[$counter]->comment;
+							$transID = $encounter[$encounter]->transID;
+							$hmoID = $encounter[$encounter]->hmoID;
+							if($dbn->isExist("select*from providersheet where hmoID = '$hmoID' and providerID = '$providerID'")){
+								if(isset($price) and isset($enroleeID) and isset($hmoID) and isset($planID)){
+									if($dbn->isExist("select*from transactions where transID '$transID' and enroleeID = '$enroleeID'")){
+										if($dbn->isExist("select * from enrolee where enroleeID = '$enroleeID' and HMOID = '$hmoID' active = 1")){
+											$sql = "insert into transactions (batchID, cardSerial, code, comments, enroleeID, HMOID, orgID, planID, price, providerID, summary, syncDate, transDate, transID) values (:batchID, :cardSerial, :code, :comments, :enroleeID, :HMOID, :orgID, :planID, :price, :providerID, :summary, :syncDate, :transDate, :transID)";
+											try{
+												$qi = $dbn->connect();
+												$fa = $qi->prepare($sql);										
+												$fa->bindValue(':batchID', $transBatch);
+												$fa->bindValue(':cardSerial', $cardSerial);
+												$fa->bindValue(':code', $PACode);
+												$fa->bindValue(':comments', $comments);
+												$fa->bindValue(':enroleeID', $enroleeID);
+												$fa->bindValue(':HMOID', $hmoID);
+												$fa->bindValue(':orgID', $orgID);
+												$fa->bindValue(':planID', $planID);
+												$fa->bindValue(':price', $price);
+												$fa->bindValue(':providerID', $providerID);
+												$fa->bindValue(':summary', $summary);
+												$fa->bindValue(':syncDate', $syncDate);
+												$fa->bindValue(':transDate', $transDate);
+												$fa->bindValue(':transID', $transID);											
+												$fa->execute();
+												array_push($statuses["successful"], $transID);
+												$sp = "update providersheet set unsettled = unsettled + :price where HMOID = :hmoID and providerID = :providerID";
+												$fa = $qi->prepare($sql);
+												$fa->bindValue(':price', $price);
+												$fa->bindValue(':HMOID', $hmoID);
+												$fa->bindValue(':providerID', $providerID);
+												$fa->execute();
+											}catch(PDOException $e){
+												$e = $dbn->cleanException($e->getMessage());
+												array_push($statuses["failed"], $transID);
+												array_push($statuses["failedLog"], $e);
+											}
+										}else{
+											array_push($statuses["failed"], $transID);
+											array_push($statuses["failedLog"], "The enrolee is invalid");
+										}
+									}else{
+										array_push($statuses["duplicate"], $transID);
+										array_push($statuses["duplicateLog"], "Transaction with the enroleeID and transactionID exist");
+									}	
+								}else{
+									array_push($statuses["failed"], $transID);
+									array_push($statuses["failedLog"], "The transaction does not have all required field");
+								}	
+							}else{
+								array_push($statuses["failed"], $transID);
+								array_push($statuses["failedLog"], "The Provider is not implemented, Contact HMO");
+							}						
+							$counter++;
+						}
+						$statuses = json_encode($statuses);
+						$g = '{"error":{"message":"","status":"0"}, "success":{"message":"The creation has been completed","code":"200"}, "content":{"data":'.$statuses.'}}';
+					}catch(PDOException $e){
+						$e = $dbn->cleanException($e->getMessage());
+						$g = '{"error":{"message":"An error:'.$e.' Ocurred", "status":"1"}}';
+					}					
+				}else{
+					$g = '{"error":{"message":"The enrolee data have not been found", "status":"1"}}';
+				}
+			}else{
+				$g = '{"error":{"message":"The organization profile have not been found", "status":"1"}}';	
+			}
+		}else{
+			$g = '{"error":{"message":"All Profile fields are required", "status":"1"}}';
+		}
+	}else{
+		$g = '{"error":{"message":"The parameter is not a valid object", "status":"1"}}';
+	}
+	return $dbn->responseFormat($resp,$g);
+});
 
 
 /* The spot for updates */
@@ -1233,43 +1555,6 @@ $app->get('/api/hmo/get/enrolee/{type}/{cardSerial}/{orgID}', function(Request $
 });
 
 
-$app->post('/api/hmo/create/enrolee', function(Request $req, Response $resp){
-	// handle single input with single file upload
-	$dbn = new db();
-	try{
-		$uploadedFiles = $req->getUploadedFiles();
-		$uploadedFile = $uploadedFiles['enrolee'];
-		if ($uploadedFile->getError() === UPLOAD_ERR_OK) {
-			$row = 1;
-			$fileX = json_encode($uploadedFile);
-			$fileX = json_decode($fileX);
-			if (($handle = fopen($fileX->file, "r")) !== FALSE) {
-				while (($data = fgetcsv($handle, 1000, ",")) !== FALSE) {
-					$num = count($data);
-					echo "<p> $num fields in line $row: <br /></p>\n";
-
-					$row++;
-					for ($c=0; $c < $num; $c++) {
-					//	echo $data[$c] . "<br />\n";
-					}
-				}
-				echo $row;
-				fclose($handle);
-				$g = '{"error":{"message":"", "status":"0"},"success":{"message":"Organization created","status":"200"}, "content":{"filename":""}}';
-			}else{
-				$g = '{"error":{"message":"The file is invalid", "status":"1"}}';
-			}
-			//$filename = moveUploadedFile($directory, $uploadedFile);
-			//$g = '{"error":{"message":"", "status":"0"},"success":{"message":"Organization created","status":"200"}, "content":{"filename":""}}';
-		}else{
-			$g = '{"error":{"message":"The file is invalid", "status":"1"}}';
-		}
-	}catch(Exception $e){
-		$e = $dbn->cleanException($e->getMessage());
-		$g = '{"error":{"message":"An error:\''.$e.'\' Ocurred", "status":"1"}}';
-	}
-	return $dbn->responseFormat($resp,$g);
-});
 
 
 $app->options('/{routes:.+}', function ($request, $response, $args) {
