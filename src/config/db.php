@@ -73,6 +73,19 @@ class db{
 			return false;
 		}
 	}
+	function queryCount($query){
+		$dbn = $this->connect();
+		$q = $dbn->query($query);
+		try{
+			if($q->fetchColumn() > 0){
+				return $q->fetchColumn();
+			}else{
+				return 0;
+			}
+		}catch(PDOException $e){
+			return 0;
+		}
+	}
 	function hmoStaffExist($username, $publicKey, $hmoID){
 		return $this->isExist("select*from hmostaffs where username = '$username' and publicKey = '$publicKey' and hmoID = '$hmoID'");		
 	}
@@ -80,7 +93,7 @@ class db{
 		$db = $this->connect();
 		$f = $db->prepare($query);
 		$f->execute();
-		$row = $f->fetchAll();
+		$row = $f->fetchAll(PDO::FETCH_ASSOC);
 		if($row){
 			$data = json_encode($row, true);
 		}else{
@@ -89,7 +102,7 @@ class db{
 		return $data;
 	}
 	function sendThis($to, $message){
-		$header = "From: BeepXchangePlus <support@beepxchangeplus.com>\r\n"; 
+		$header = "From: HealthTouch Alert <no-reply@healthtouch.me>\r\n"; 
 			$header .= "To: ".$to." \r\n"; 
 			$header.= "MIME-Version: 1.0\r\n"; 
 			$header.= "Content-Type: text/html; charset=ISO-8859-1\r\n"; 
@@ -98,7 +111,7 @@ class db{
 				$body = $message[0];
 				$subject = $message[1];
 			}else{
-				$subject = "BeepXchangePlus Transaction Notice";
+				$subject = "Enrolee Transaction Notice";
 				$body = $message;
 			}
 			if(mail($to,$subject,$body,$header)){
@@ -106,6 +119,35 @@ class db{
 			}else{
 				return false;
 			}
+	}
+	function postMaster($transBatch, $pname, $email){
+		try{
+			$mail = new PHPMailer;
+			$mail->IsSMTP();
+			$mail->SMTPAuth = true;
+			$mail->Host = "mail.healthtouch.me";		
+			$mail->Username = "postmaster@healthtouch.me";
+			$mail->Password = "sanwoadmin001--"; 
+			$mail->setFrom('no-reply@healthtouch.me', 'Healthtouch Service');
+			$mail->addAddress($email);
+			$mail->addReplyTo('no-reply@healthtouch.me', 'Healthtouch Service');
+			$mail->isHTML(true);
+			$mail->Port = 25;                               // Set email format to HTML
+			$message = "<p><strong>Dear HMO,</strong></p>
+			<div>
+			<div style=\"padding:12px; line-height:120%\">You have new encounter entry, Batch Number: <strong><span style=\"color: #ff6600;\">".$transBatch."</span></strong> from <strong><span style=\"color: #333399;\">".$pname."</span></strong>. This email does not mean you have only one encounter as all encounter is summarized into a batch. Please login to view details.</div>
+			<div style=\"padding:12px; line-height:120%\"><span style=\"color: #999999;\">Kindly ignore if you have already checked in.</span></div>
+			</div>";
+			$mail->Subject = 'Encounter Alert';
+			$mail->Body = $message;	
+			if(!$mail->send()) {
+				return true;
+			}else{
+				return false;
+			}  
+	}catch(Exception $e){
+		//echo $e->getMessage();
+	}
 	}
 }
 ?>

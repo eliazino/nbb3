@@ -3,6 +3,7 @@ use \Psr\Http\Message\ServerRequestInterface as Request;
 use \Psr\Http\Message\ResponseInterface as Response;
 $app = new \Slim\App;
 error_reporting(0);
+ini_set('max_execution_time', 300);
 $app->post('/api/hmo/create', function(Request $req, Response $resp){
 	$json = $req->getParsedBody();
 	$json = isset($json)? $json : $req->getBody();
@@ -11,7 +12,7 @@ $app->post('/api/hmo/create', function(Request $req, Response $resp){
 	if(!($validJson === NULL)){
 		try{
 			$data = $validJson->data;
-			if(isset($data->name) and isset($data->address) and isset($data->phone) and isset($data->email) and isset($data->state) and isset($data->LG)){
+			if(strlen($data->name) > 5 and strlen($data->address) > 5 and strlen($data->phone) > 5 and strlen($data->email) > 5 and is_numeric($data->state) and is_numeric($data->LG)){
 				$q = "insert into hmo (name, address, phone, email, dateAdded, state, LG) VALUES (:name, :address, :phone, :email, :dateAdded, :state, :LG)";
 				$mcrypto = new mcrypt();
 				$ftoken = $mcrypto->mCryptThis(time()*rand(100000,2000000));
@@ -235,20 +236,23 @@ $app->post('/api/hmo/create/service', function(Request $req, Response $resp){
 			$publicKey = $validJson->data->publicKey;
 			$hmoID = $validJson->data->hmoID;
 			if(isset($service) and isset($planID) and isset($username) and isset($publicKey)){
-				if($dbn->isExist("select*from hmostaffs where username = '$username' and publicKey = '$publicKey' and hmoID = '$hmo'")){
+				if($dbn->isExist("select*from hmostaffs where username = '$username' and publicKey = '$publicKey' and hmoID = '$hmoID'")){
 					if(is_numeric($planID)){
 						if(count($service) > 1){
 							$counter = 0;
 							$statuses = array("failed"=>[], "successful"=>[], "duplicate"=>[], "errorLog"=>[]);
+							$prep = "delete from planservices where hmoID = '$hmoID' and planID = '$planID'";
+							$Qin = $dbn->connect();
+							$f = $Qin->prepare($prep);
+							$f->execute();
 							while($counter < count($service)){
-								if(isset($service[$counter]->serviceID) and isset($service[$counter]->planID) and isset($service[$counter]->category)){
-									if(!$dbn->isExist("select*from planservices where serviceID = '$service->serviceID' and hmoID = '$service->hmoID' and planID = '$service->planID'")){
-										$f = "insert into planservices (serviceID, planID, hmoID, category) values (:serviceID, :planID, :hmoID, :category)";
-										$Qin = $dbn->connect();
+								if(isset($service[$counter]->serviceID) and isset($service[$counter]->category)){
+									if(!$dbn->isExist("select*from planservices where serviceID = '".$service[$counter]->serviceID."' and hmoID = '$hmoID' and planID = '$planID'")){
+										$f = "insert into planservices (serviceID, planID, hmoID, category) values (:serviceID, :planID, :hmoID, :category)";										
 										$f = $Qin->prepare($f);
 										$f->bindParam(":serviceID", $service[$counter]->serviceID);
-										$f->bindParam(":planID", $service[$counter]->planID);
-										$f->bindParam(":hmoID", $service[$counter]->hmoID);						
+										$f->bindParam(":planID", $planID);
+										$f->bindParam(":hmoID", $hmoID);						
 										$f->bindParam(":category", $service[$counter]->category);
 										$f->execute();
 										array_push($statuses["successful"], $service[$counter]->serviceID);
@@ -261,6 +265,7 @@ $app->post('/api/hmo/create/service', function(Request $req, Response $resp){
 								}
 								$counter++;
 							}
+							$q = $dbn->selectFromQuery("select * from providertariff where planID = '$planID'");
 							$statuses = json_encode($statuses);
 							$g = '{"error":{"message":"","status":"0"}, "success":{"message":"service creation was succesfull","code":"200"}, "content":{"data":'.$statuses.'}}';
 						}else{
@@ -285,11 +290,12 @@ $app->post('/api/hmo/create/service', function(Request $req, Response $resp){
 	return $dbn->responseFormat($resp,$g);
 });
 
-$app->post('/api/hmo/add/provider', function(Request $req, Response $resp){
+$app->post('/api/hmo/set/provider/to/{status}', function(Request $req, Response $resp){
 	$json = $req->getParsedBody();
 	$json = isset($json)? $json : $req->getBody();
 	$dbn = new db();
 	$validJson = $dbn->jsonFormat($json);
+	$status = $req->getAttribute('status');
 	if(!($validJson === NULL)){
 		try{
 			$data = $validJson->data;
@@ -300,15 +306,35 @@ $app->post('/api/hmo/add/provider', function(Request $req, Response $resp){
 			if(isset($username) and isset($publicKey) and isset($hmo) and is_numeric($hmo)){
 				if($dbn->hmoStaffExist($username, $publicKey, $hmo)){
 					if(isset($providerID) and is_numeric($providerID)){
-						$sql = "INSERT providersheet (hmoID, providerID) SELECT 
-						:hmo, :provider WHERE NOT EXISTS 
-						( SELECT 1 FROM providersheet WHERE hmoID = :hmo AND providerID = :provider )";
-						$Qin = $dbn->connect();
-						$f = $Qin->prepare($f);
-						$f->bindParam(":hmo", $hmo);
-						$f->bindParam(":provider", $providerID);
-						$f->execute();
-						$g = '{"error":{"message":"","status":"0"}, "success":{"message":"The new provider has been added","code":"200"}}}';
+						if($status == 2){
+							$sql = "INSERT providersheet (hmoID, providerID) SELECT 
+							:hmo, :provider WHERE NOT EXISTS 
+							( SELECT 1 FROM providersheet WHERE hmoID = :hmo AND providerID = :provider )";
+							$Qin = $dbn->connect();
+							$f = $Qin->prepare($sql);
+							$f->bindParam(":hmo", $hmo);
+							$f->bindParam(":provider", $providerID);
+							$f->execute();
+							$g = '{"error":{"message":"","status":"0"}, "success":{"message":"The new status has been set","code":"200"}}';
+						}elseif($status == 1){
+							$sql = "UPDATE providersheet SET status = 1 WHERE hmoID = :hmo AND providerID = :provider";
+							$Qin = $dbn->connect();
+							$f = $Qin->prepare($sql);
+							$f->bindParam(":hmo", $hmo);
+							$f->bindParam(":provider", $providerID);
+							$f->execute();
+							$g = '{"error":{"message":"","status":"0"}, "success":{"message":"The new status has been set","code":"200"}}';
+						}elseif($status == 0){
+							$sql = "UPDATE providersheet SET status = 0 WHERE hmoID = :hmo AND providerID = :provider";
+							$Qin = $dbn->connect();
+							$f = $Qin->prepare($sql);
+							$f->bindParam(":hmo", $hmo);
+							$f->bindParam(":provider", $providerID);
+							$f->execute();
+							$g = '{"error":{"message":"","status":"0"}, "success":{"message":"The new status has been set","code":"200"}}';
+						}else{
+							$g = '{"error":{"message":"The New status could not be set because it is invalid", "status":"1"}}';	
+						}
 					}else{
 						$g = '{"error":{"message":"The Provider is invalid", "status":"1"}}';
 					}
@@ -328,7 +354,79 @@ $app->post('/api/hmo/add/provider', function(Request $req, Response $resp){
 	return $dbn->responseFormat($resp,$g);
 });
 
-$app->post('/api/hmo/create/tarrif', function(Request $req, Response $resp){
+$app->post('/api/hmo/create/tariff', function(Request $req, Response $resp){
+	$json = $req->getParsedBody();
+	$json = isset($json)? $json : $req->getBody();
+	$dbn = new db();
+	$validJson = $dbn->jsonFormat($json);
+	if(!($validJson === NULL)){
+		try{
+			$data = $validJson->data;
+			$tariffName = $data->tariffName;
+			$tariffDescription = $data->tariffDescription;
+			$planID = $data->planID;
+			$hmo = $data->hmoID;
+			$providerID = $data->provider;
+			$username = $data->username;
+			$publicKey = $data->publicKey;
+			if(isset($username) and isset($publicKey) and isset($hmo) and is_numeric($hmo)){
+				if($dbn->hmoStaffExist($username, $publicKey, $hmo)){					
+					if(isset($tariffName) and isset($planID) and isset($providerID) and is_numeric($planID) and isset($tariffDescription)){
+						if($dbn->isExist("select*from plans where id = '$planID'")){
+							if(!$dbn->isExist("select * from tariffs where planID = '$planID' and providerID = '$providerID' and hmoID = '$hmo' and name = '$tariffName'")){
+								$dats = $dbn->selectFromQuery("select*from planservices where planID = '$planID'");
+								$sql = "insert into tariffs (description, hmoID, name, planID, providerID) values (:descr, :hmoID, :name, :planID, :providerID)";
+								$f = $dbn->connect();
+								$db = $f->prepare($sql);
+								$db->bindParam(':descr', $tariffDescription);
+								$db->bindParam(':hmoID', $hmo);
+								$db->bindParam(':name', $tariffName);
+								$db->bindParam(':planID', $planID);
+								$db->bindParam(':providerID', $providerID);
+								$db->execute();
+								$tariffID = $f->lastInsertId();
+								$dats = json_decode($dats);
+								$counter = 0;
+								$price = 0;
+								while($counter < count($dats)){
+									$sql = "insert into providertariff (providerID, planID, HMOID, price, serviceID, tariffID) values (:providerID, :planID, :HMOID, :price, :serviceID, :tariffID)";
+									$db = $f->prepare($sql);
+									$db->bindParam(':providerID', $providerID);
+									$db->bindParam(':planID', $planID);
+									$db->bindParam(':HMOID', $hmo);
+									$db->bindParam(':price', $price);
+									$db->bindParam(':serviceID', $dats[$counter]->serviceID);
+									$db->bindParam(':tariffID', $tariffID);
+									$db->execute();
+									$counter++;
+								}
+								$g = '{"error":{"message":"","status":"0"}, "success":{"message":"The new tariff has been created","code":"200"}}';
+							}else{
+								$g = '{"error":{"message":"The Tariff already Exists", "status":"1"}}';
+							}							
+						}else{
+							$g = '{"error":{"message":"The Plan is invalid", "status":"1"}}';
+						}
+					}else{
+						$g = '{"error":{"message":"All fields are required", "status":"1"}}';
+					}
+				}else{
+					$g = '{"error":{"message":"The HMO Staff profile have not been found", "status":"1"}}';
+				}
+			}else{
+				$g = '{"error":{"message":"All Profile fields are required", "status":"1"}}';
+			}
+		}catch(PDOException $e){
+			$e = $dbn->cleanException($e->getMessage());
+			$g = '{"error":{"message":"An error:\''.$e.'\' Ocurred", "status":"1"}}';
+		}
+	}else{
+		$g = '{"error":{"message":"The parameter is not a valid object", "status":"1"}}';
+	}
+	return $dbn->responseFormat($resp,$g);
+});
+
+$app->post('/api/hmo/upload/tarrif', function(Request $req, Response $resp){
 	$json = $req->getParsedBody();
 	$json = isset($json)? $json : $req->getBody();
 	$dbn = new db();
@@ -340,28 +438,40 @@ $app->post('/api/hmo/create/tarrif', function(Request $req, Response $resp){
 			$planID = $data->planID;
 			$hmo = $data->hmoID;
 			$providerID = $data->providerID;
-			$price = $data->price;
+			//$price = $data->price;
 			$username = $data->username;
 			$publicKey = $data->publicKey;
 			if(isset($username) and isset($publicKey) and isset($hmo) and is_numeric($hmo)){
-				if($dbn->hmoStaffExist($username, $publicKey, $hmo)){
-					if(isset($price) and is_numeric($price)){
-						if(isset($tariffName) and isset($planID) and isset($providerID)){
-							$sql = "insert into providerTariff (tariffName, providerID, planID, HMOID, price) values (:tariffName, :providerID, :planID, :HMOID, :price)";
+				if($dbn->hmoStaffExist($username, $publicKey, $hmo)){					
+					if(isset($tariffName) and isset($planID) and isset($providerID) ){
+						$services = $data->services;
+						if(is_array($services)){
+							$counter = 0;
 							$Qin = $dbn->connect();
-							$f = $Qin->prepare($sql);
-							$f->bindParam(":tariffName", $tariffName);
-							$f->bindParam(":providerID", $providerID);
-							$f->bindParam(":planID", $planID);						
-							$f->bindParam(":HMOID", $hmo);
-							$f->bindParam(":price", $price);
-							$f->execute();
-							$g = '{"error":{"message":"","status":"0"}, "success":{"message":"Tariff creation was succesfull","code":"200"}, "content":{}}';
+							while($counter < count($services)){
+								$price = $services[$counter]->price;
+								$serviceID = $services[$counter]->serviceID;
+								if(isset($price) and is_numeric($price) and is_numeric($serviceID)){
+									$sql = "insert into providerTariff (tariffName, providerID, planID, HMOID, price, serviceID) values (:tariffName, :providerID, :planID, :HMOID, :price, :serviceID)";
+									$f = $Qin->prepare($sql);
+									$f->bindParam(":tariffName", $tariffName);
+									$f->bindParam(":providerID", $providerID);
+									$f->bindParam(":planID", $planID);
+									$f->bindParam(":HMOID", $hmo);
+									$f->bindParam(":price", $price);
+									$f->bindParam(":serviceID", $serviceID);
+									$f->execute();
+									$g = '{"error":{"message":"","status":"0"}, "success":{"message":"Tariff creation was succesfull","code":"200"}, "content":{}}';
+								}else{
+									$g = '{"error":{"message":"Price and serviceID fields are invalid", "status":"1"}}';
+								}
+								$counter++;
+							}
 						}else{
-							$g = '{"error":{"message":"All fields are required", "status":"1"}}';
+							$g = '{"error":{"message":"The services fields are invalid", "status":"1"}}';
 						}
 					}else{
-						$g = '{"error":{"message":"The Price is invalid", "status":"1"}}';
+						$g = '{"error":{"message":"Some required fields are not valid", "status":"1"}}';
 					}
 				}else{
 					$g = '{"error":{"message":"The HMO Staff profile have not been found", "status":"1"}}';
@@ -698,6 +808,7 @@ $app->post('/api/hmo/create/enrolee', function(Request $req, Response $resp){
 	return $dbn->responseFormat($resp,$g);
 });
 
+/*
 $app->post('/api/hmo/create/organization', function(Request $req, Response $resp){
 	$json = $req->getParsedBody();
 	$json = isset($json)? $json : $req->getBody();
@@ -741,7 +852,7 @@ $app->post('/api/hmo/create/organization', function(Request $req, Response $resp
 	}
 	return $dbn->responseFormat($resp,$g);
 });
-
+*/
 
 $app->post('/api/hmo/create/organizationStaff', function(Request $req, Response $resp){
 	$json = $req->getParsedBody();
@@ -900,10 +1011,13 @@ $app->post('/api/hmo/sync/encounter', function(Request $req, Response $resp){
 		$encounter = $data->encounter;
 		$transBatch = time()."/".$providerID."/".rand(23456,989999);
 		$syncDate = time();
+		$provData = $dbn->selectFromQuery("select*from providers where id = '$providerID'");
+		$pname = $provData->name;
 		if(isset($username) and isset($publicKey) and isset($hmo) and isset($providerID)){
 			if($dbn->isExist("select * from provider where username = '$username' and publicKey = '$publicKey' and providerID = '$hmo'")){
 				if(is_array($encounter)){
 					$statuses = array("failed"=>[], "successful"=>[], "duplicate"=>[], "failedLog"=>[], "duplicateLog"=>[]);
+					$emails = array();
 					$counter = 0;
 					$t = "INSERT INTO transbatch (totalPrice, providerID, transDate, transID) values (0, :providerID, :transDate, :transID)";
 					try{
@@ -955,6 +1069,12 @@ $app->post('/api/hmo/sync/encounter', function(Request $req, Response $resp){
 												$fa->bindValue(':HMOID', $hmoID);
 												$fa->bindValue(':providerID', $providerID);
 												$fa->execute();
+												$data = $dbn->selectFromQuery("select*from hmo where id = '$hmoID'");
+												$data = json_encode($data);
+												$email = $data->email;
+												if(!in_array($email, $emails)){
+													array_push($emails, $email);
+												}												
 											}catch(PDOException $e){
 												$e = $dbn->cleanException($e->getMessage());
 												array_push($statuses["failed"], $transID);
@@ -976,6 +1096,11 @@ $app->post('/api/hmo/sync/encounter', function(Request $req, Response $resp){
 								array_push($statuses["failed"], $transID);
 								array_push($statuses["failedLog"], "The Provider is not implemented, Contact HMO");
 							}						
+							$counter++;
+						}
+						$counter = 0;
+						while($counter < count($emails)){
+							$dbn->postMaster($transBatch, $pname, $emails[$counter]);
 							$counter++;
 						}
 						$statuses = json_encode($statuses);
@@ -1127,7 +1252,7 @@ $app->put('/api/hmo/edit/staff', function(Request $req, Response $resp){
 });
 
 
-$app->post('/api/hmo/edit/service', function(Request $req, Response $resp){
+$app->put('/api/hmo/edit/service', function(Request $req, Response $resp){
 	$json = $req->getParsedBody();
 	$json = isset($json)? $json : $req->getBody();
 	$dbn = new db();
@@ -1193,7 +1318,7 @@ $app->post('/api/hmo/edit/service', function(Request $req, Response $resp){
 	return $dbn->responseFormat($resp,$g);
 });
 
-$app->post('/api/hmo/edit/tarrif', function(Request $req, Response $resp){
+$app->put('/api/hmo/edit/tarrif', function(Request $req, Response $resp){
 	$json = $req->getParsedBody();
 	$json = isset($json)? $json : $req->getBody();
 	$dbn = new db();
@@ -1244,11 +1369,86 @@ $app->post('/api/hmo/edit/tarrif', function(Request $req, Response $resp){
 	return $dbn->responseFormat($resp,$g);
 });
 
+$app->put('/api/hmo/edit/plan', function(Request $req, Response $resp){
+	$json = $req->getParsedBody();
+	$json = isset($json)? $json : $req->getBody();
+	$dbn = new db();
+	$validJson = $dbn->jsonFormat($json);
+	if(!($validJson === NULL)){
+		try{
+			$data = $validJson->data;
+			if(isset($data->name) and isset($data->description) and isset($data->hmoID) and isset($data->username) and isset($data->publicKey)){
+				$planName = $data->name;
+				$description = $data->description;
+				$id = $data->id;
+				$hmo = $data->hmoID;
+				$username = $data->username;
+				$publicKey = $data->publicKey;
+				if(is_numeric($hmo)){
+					$fsql = "select*from hmostaffs where username = '$username' and publicKey = '$publicKey' and HMOID = '$hmo'";
+					if($dbn->isExist($fsql)){
+						if(is_numeric($id) and $dbn->isExist("select*from plans where id = '$id' and hmoid = '$hmo'")){
+							$q = "update plans set name = :name, description = :description where id = :id";
+							$Qin = $dbn->connect();
+							$f = $Qin->prepare($q);
+							$f->bindParam(":name", $planName);
+							$f->bindParam(":description", $description);
+							$f->bindParam(":id", $id);						
+							$f->execute();
+							$g = '{"error":{"message":"", "status":"0"},"success":{"message":"The new Plan has been updated","status":"200"}, "content":{}}';
+						}else{
+							$g = '{"error":{"message":"Sorry, the plan is invalid", "status":"1"}}';
+						}
+					}else{
+						$g = '{"error":{"message":"The HMO Staff profile have not been found", "status":"1"}}';
+					}
+				}else{
+					$g = '{"error":{"message":"The HMO profile is invalid", "status":"1"}}';
+				}
+			}else{
+				$g = '{"error":{"message":"All Profile fields are required", "status":"1"}}';
+			}
+		}catch(PDOException $e){
+			$e = $dbn->cleanException($e->getMessage());
+			$g = '{"error":{"message":"An error:\''.$e.'\' Ocurred", "status":"1"}}';
+		}
+	}else{
+		$g = '{"error":{"message":"The parameter is not a valid object", "status":"1"}}';
+	}
+	return $dbn->responseFormat($resp,$g);
+});
 
 /*
  This is the getting Arena 
  The getting APIs
 */
+
+
+$app->get('/api/hmo/get/dashboard',  function(Request $req, Response $resp){
+	$headers = $req->getHeaders();
+	$search = $req->getAttribute('id');
+	$dbn = new db();
+    if(array_key_exists('HTTP_PUBLICKEY', $headers) and array_key_exists('HTTP_USERNAME', $headers) and array_key_exists('HTTP_HMOID', $headers)) {
+        $publicKey  = $headers['HTTP_PUBLICKEY'][0];
+		$username  = $headers['HTTP_USERNAME'][0];
+		$hmo = $headers['HTTP_HMOID'][0];
+		if(is_numeric($hmo) and $dbn->hmoStaffExist($username, $publicKey, $hmo)){
+			$enrolees = $dbn->queryCount("select id from enrolee where HMOID = '$hmo'");
+			$orgNumber = $dbn->queryCount("select id from organizationstaff where HMOID = '$hmo'");
+			$providers = $dbn->queryCount("select id from providerSheet where hmoID = '$hmo'");
+			$resolvedInvoice = $dbn->queryCount("select id from transactions where HMOID = '$hmo' and (status = -1 or status = 1)");
+			$rejectedInvoice = $dbn->queryCount("select id from transactions where HMOID = '$hmo' and (status = -1)");
+			$pendingInvoice = $dbn->queryCount("select id from transactions where HMOID = '$hmo' and (status = 0)");
+			$am = $dbn->selectFromQuery("select sum(price) as totalAmount from transactions where HMOID = '$hmo' and status = 1");
+			$g = '{"error":{"message":"","status":"0"}, "success":{"message":"Data grabbed","code":"200"}, "content":{"enrolees":"'.$enrolees.'", "providers":"'.$providers.'", "orgCount":"'.$orgNumber.'", "resolvedInvoice":"'.$resolvedInvoice.'", "rejectedInvoice":"'.$rejectedInvoice.'", "pendingInvoice":"'.$pendingInvoice.'", "amountProcessed":'.$am.'}}';
+		}else{
+			$g = '{"error":{"message":"The HMO Staff profile have not been found", "status":"1"}}';
+		}
+	}else{
+		$g = '{"error":{"message":"All Profile fields are required", "status":"1"}}';
+	}
+	return $dbn->responseFormat($resp,$g);
+});
 
 $app->get('/api/hmo/get/staff/{id}', function(Request $req, Response $resp){
 	$headers = $req->getHeaders();
@@ -1333,10 +1533,30 @@ $app->get('/api/hmo/get/serviceCategory', function(Request $req, Response $resp)
 	}
 	return $dbn->responseFormat($resp,$g);
 });
+$app->get('/api/hmo/get/providerCategory', function(Request $req, Response $resp){
+	$headers = $req->getHeaders();
+	$dbn = new db();
+    if(array_key_exists('HTTP_PUBLICKEY', $headers) and array_key_exists('HTTP_USERNAME', $headers) and array_key_exists('HTTP_HMOID', $headers)) {
+        $publicKey  = $headers['HTTP_PUBLICKEY'][0];
+		$username  = $headers['HTTP_USERNAME'][0];
+		$hmo = $headers['HTTP_HMOID'][0];
+		if($dbn->hmoStaffExist($username, $publicKey, $hmo)){
+			$sql = "select * from providercategory";
+			$data = $dbn->selectFromQuery($sql);
+			$g = '{"error":{"message":"","status":"0"}, "success":{"message":"Data grabbed","code":"200"}, "content":{"data":'.$data.'}}';
+		}else{
+			$g = '{"error":{"message":"The HMO Staff profile have not been found", "status":"1"}}';
+		}
+	}else{
+		$g = '{"error":{"message":"All Profile fields are required", "status":"1"}}';
+	}
+	return $dbn->responseFormat($resp,$g);
+});
 
-$app->get('/api/hmo/get/services/{serviceID}', function(Request $req, Response $resp){
+$app->get('/api/hmo/get/services/{serviceID}/{lastPage}', function(Request $req, Response $resp){
 	$headers = $req->getHeaders();
 	$search = $req->getAttribute('serviceID');
+	$lastpage = $req->getAttribute('lastPage');
 	$dbn = new db();
     if(array_key_exists('HTTP_PUBLICKEY', $headers) and array_key_exists('HTTP_USERNAME', $headers) and array_key_exists('HTTP_HMOID', $headers)) {
         $publicKey  = $headers['HTTP_PUBLICKEY'][0];
@@ -1348,7 +1568,11 @@ $app->get('/api/hmo/get/services/{serviceID}', function(Request $req, Response $
 				$data = $dbn->selectFromQuery($sql);
 				$g = '{"error":{"message":"","status":"0"}, "success":{"message":"Data grabbed","code":"200"}, "content":{"data":'.$data.'}}';
 			}elseif(is_numeric($search)){
-				$sql = "select * from services where serviceType = '$search'";
+				if(is_numeric($lastPage)){
+					$sql = "select * from services where serviceType = '$search' and id > $lastPage order by id asc limit 100";
+				}else{
+					$sql = "select * from services where serviceType = '$search' order by id asc limit 100";
+				}
 				$data = $dbn->selectFromQuery($sql);
 				$g = '{"error":{"message":"","status":"0"}, "success":{"message":"Data grabbed","code":"200"}, "content":{"data":'.$data.'}}';
 			}else{
@@ -1365,7 +1589,7 @@ $app->get('/api/hmo/get/services/{serviceID}', function(Request $req, Response $
 
 $app->get('/api/hmo/get/planservice/{planID}', function(Request $req, Response $resp){
 	$headers = $req->getHeaders();
-	$search = $req->getAttribute('serviceID');
+	$search = $req->getAttribute('planID');
 	$dbn = new db();
     if(array_key_exists('HTTP_PUBLICKEY', $headers) and array_key_exists('HTTP_USERNAME', $headers) and array_key_exists('HTTP_HMOID', $headers)) {
         $publicKey  = $headers['HTTP_PUBLICKEY'][0];
@@ -1373,7 +1597,7 @@ $app->get('/api/hmo/get/planservice/{planID}', function(Request $req, Response $
 		$hmo = $headers['HTTP_HMOID'][0];
 		if($dbn->hmoStaffExist($username, $publicKey, $hmo)){
 			if(is_numeric($search)){
-				$sql = "select planservices.category as category, planservices.comment as comment, planservices.hmoID as hmoID, planservices.id as planserviceID, planservices.planID as planID, planservices.serviceID as serviceID, services.serviceName as serviceName, services.serviceType as serviceType from planservices left join services on planservices.serviceID = services.id where planservices.planID = '$search' and planservices.hmoID = '$hmo'";
+				$sql = "select planservices.category as serviceType, planservices.serviceID as id, services.serviceName as serviceName from planservices left join services on planservices.serviceID = services.id where planservices.planID = '$search' and planservices.hmoID = '$hmo'";
 				$data = $dbn->selectFromQuery($sql);
 				$g = '{"error":{"message":"","status":"0"}, "success":{"message":"Data grabbed","code":"200"}, "content":{"data":'.$data.'}}';
 			}else{
@@ -1429,25 +1653,51 @@ $app->get('/api/hmo/get/providertariffs/{planID}/{providerID}', function(Request
 	return $dbn->responseFormat($resp,$g);
 });
 
-$app->get('/api/hmo/get/providers/{category}', function(Request $req, Response $resp){
+$app->get('/api/hmo/get/providers/{category}/{state}/{lg}', function(Request $req, Response $resp){
 	$headers = $req->getHeaders();
 	$category = $req->getAttribute('category');
+	$state = $req->getAttribute('state');
+	$lg = $req->getAttribute('lg');
 	$dbn = new db();
     if(array_key_exists('HTTP_PUBLICKEY', $headers) and array_key_exists('HTTP_USERNAME', $headers) and array_key_exists('HTTP_HMOID', $headers)) {
         $publicKey  = $headers['HTTP_PUBLICKEY'][0];
 		$username  = $headers['HTTP_USERNAME'][0];
 		$hmo = $headers['HTTP_HMOID'][0];
 		if($dbn->hmoStaffExist($username, $publicKey, $hmo)){
-			if(is_numeric($category) || $planID == "-"){
-				if($category == "-"){
-					$sql = "select*from providers";
-				}else{
-					$sql = "select * from providers where category = '$category'";
-				}
+			if((is_numeric($category) || $category == "-") or (is_numeric($state) or $state == "-") or (is_numeric($lg) or $lg == "-")){
+				$plug = "";
+				if($category != "-"){ $plug = " where providers.category = '$category'"; }
+				if($state != "-"){ $plug = (strlen($plug) > 4)? $plug." and providers.state = '$state'" : " where providers.state = '$state'"; }
+				if($lg != "-"){ $plug = (strlen($plug) > 4)? $plug." and providers.LG = '$lg'" : " where providers.LG = '$lg'"; }
+				$sql = "SELECT tbl_2.providerID, tbl_2.providersName, tbl_2.providersPhone, tbl_2.LG, tbl_2.providersAddress, tbl_2.providerState, tbl_2.providerLG, providersheet.id as sheetID, providerSheet.status as providerStatus from (SELECT tbl_1.providerID, tbl_1.providersName, tbl_1.providersPhone, tbl_1.LG, tbl_1.providersAddress, tbl_1.providerState, lgs.name as providerLG from (select providers.id as providerID, providers.name as providersName, providers.phone as providersPhone, providers.state as state, providers.LG as LG, providers.address as providersAddress, state.name as providerstate from providers left join state on providers.state = state.id".$plug.") as tbl_1 left join lgs on tbl_1.LG = lgs.id) as tbl_2 left join providersheet on providersheet.providerID = tbl_2.providerID";
 				$data = $dbn->selectFromQuery($sql);
 				$g = '{"error":{"message":"","status":"0"}, "success":{"message":"Data grabbed","code":"200"}, "content":{"data":'.$data.'}}';
 			}else{
 				$g = '{"error":{"message":"The search term is invalid", "status":"1"}}';
+			}
+		}else{
+			$g = '{"error":{"message":"The HMO Staff profile have not been found", "status":"1"}}';
+		}
+	}else{
+		$g = '{"error":{"message":"All Profile fields are required", "status":"1"}}';
+	}
+	return $dbn->responseFormat($resp,$g);
+});
+
+$app->get('/api/hmo/get/providersheet', function(Request $req, Response $resp){
+	$headers = $req->getHeaders();
+	$dbn = new db();
+	if(array_key_exists('HTTP_PUBLICKEY', $headers) and array_key_exists('HTTP_USERNAME', $headers) and array_key_exists('HTTP_HMOID', $headers)) {
+        $publicKey  = $headers['HTTP_PUBLICKEY'][0];
+		$username  = $headers['HTTP_USERNAME'][0];
+		$hmo = $headers['HTTP_HMOID'][0];
+		if(is_numeric($hmo)){
+			if($dbn->hmoStaffExist($username, $publicKey, $hmo)){
+				$sql = "select providersheet.providerID, providers.name, providers.category, providers.id as id from providersheet left join providers on providersheet.providerID = providers.id where providersheet.hmoID = '$hmo'";
+				$data = $dbn->selectFromQuery($sql);
+				$g = '{"error":{"message":"","status":"0"}, "success":{"message":"Data grabbed","code":"200"}, "content":{"data":'.$data.'}}';
+			}else{
+				$g = '{"error":{"message":"The HMO Staff profile have not been found", "status":"1"}}';
 			}
 		}else{
 			$g = '{"error":{"message":"The HMO Staff profile have not been found", "status":"1"}}';
@@ -1533,11 +1783,64 @@ $app->get('/api/hmo/get/enrolee/{type}/{cardSerial}/{orgID}', function(Request $
 		$username  = $headers['HTTP_USERNAME'][0];
 		$hmo = $headers['HTTP_HMOID'][0];
 		if($dbn->hmoStaffExist($username, $publicKey, $hmo)){
-			if($type == 'primary'){
+			if(true){
+				$binds = array();
+				$binds[":hmoid"] = $hmo;
 				$plug = "";
-				if($cardSerial != '-'){ $plug = " and enrolee.cardSerial = '$cardSerial'"; }
-				if($orgID != '-'){ $plug = $plug." and enrolee.organizationID = '$orgID'"; }
-				$sql = "select enrolee.id as enroleeID, address, birthday, cardSerial, dependents, email, enroleeID, gender, HMOID, LG, name, organizationID, phone, planID, profilePicture, publicKey, state, active, organizations.name as orgName from enrolee left join organization on enrolee.organizationID = organization.id where enrolee.HMOID = '$hmo'".$plug;
+				if($cardSerial != '-'){ $plug = " and enrolee.cardSerial = :cardSerial";  $binds[":cardSerial"] = $cardSerial; }
+				if($orgID != '-'){ $plug = $plug." and enrolee.organizationID = :orgID"; $binds[":orgID"] = $orgID; }
+				$sql = "select enrolee.id as enroleeID, address, birthday, cardSerial, dependents, email, enroleeID, gender, HMOID, LG, name, organizationID, phone, planID, profilePicture, publicKey, state, active, organizations.name as orgName from enrolee left join organization on enrolee.organizationID = organization.id where enrolee.HMOID = :hmoid".$plug;
+				$f = $dbn->connect();
+				$f = $f->prepare($sql);							
+				$f->execute($binds);
+				$row = $f->fetchAll();
+				if($row){
+					$data = json_encode($row, true);
+				}else{
+					$data = "[]";
+				}
+				$g = '{"error":{"message":"","status":"0"}, "success":{"message":"data grabbed","code":"200"}, "content":{"data":'.$data.'}}';
+			}else{
+				if($cardSerial != '-'){
+
+				}else{
+					$g = '{"error":{"message":"Search is required for secondary enrolee", "status":"1"}}';
+				}
+			}
+		}else{
+			$g = '{"error":{"message":"The HMO Staff profile have not been found", "status":"1"}}';
+		}
+	}else{
+		$g = '{"error":{"message":"All Profile fields are required", "status":"1"}}';
+	}
+	return $dbn->responseFormat($resp,$g);
+});
+
+$app->get('/api/hmo/get/tariffs/{provider}', function(Request $req, Response $resp){
+	$headers = $req->getHeaders();
+	$providerID = $req->getAttribute('provider');
+	$dbn = new db();
+    if(array_key_exists('HTTP_PUBLICKEY', $headers) and array_key_exists('HTTP_USERNAME', $headers) and array_key_exists('HTTP_HMOID', $headers)) {
+        $publicKey  = $headers['HTTP_PUBLICKEY'][0];
+		$username  = $headers['HTTP_USERNAME'][0];
+		$hmo = $headers['HTTP_HMOID'][0];
+		if($dbn->hmoStaffExist($username, $publicKey, $hmo)){
+			if(true){
+				$binds = array();
+				$binds[":hmoid"] = $hmo;
+				$plug = " where tariffs.hmoID = :hmoid";
+				if($providerID != '-'){ $plug = $plug." and tariffs.providerID = :provider"; $binds[":provider"] = $providerID; }
+				$sql = "select tbl_1.description as description, tbl_1.tariffName, tbl_1.planID, tbl_1.providerID, tbl_1.planName, providers.name as providername from (select tariffs.description as description, tariffs.name as tariffName, tariffs.planID as planID, tariffs.providerID as providerID, plans.name as planName from tariffs left join plans on tariffs.planID = plans.id".$plug.") as tbl_1 left join providers on tbl_1.providerID = providers.id";
+				$f = $dbn->connect();
+				$f = $f->prepare($sql);							
+				$f->execute($binds);
+				$row = $f->fetchAll();
+				if($row){
+					$data = json_encode($row, true);
+				}else{
+					$data = "[]";
+				}
+				$g = '{"error":{"message":"","status":"0"}, "success":{"message":"data grabbed","code":"200"}, "content":{"data":'.$data.'}}';
 			}else{
 				if($cardSerial != '-'){
 
@@ -1555,7 +1858,136 @@ $app->get('/api/hmo/get/enrolee/{type}/{cardSerial}/{orgID}', function(Request $
 });
 
 
+$app->post('/api/hmo/sendMail', function(Request $req, Response $resp){
+	try{
+		$transBatch = "HMO/7865656/KIH";
+		$pname = "Kyle Jay HealthCenter. Ibadan";
+		$mail = new PHPMailer;
+		$mail->IsSMTP();
+		$mail->SMTPAuth = true;
+		$mail->Host = "mail.healthtouch.me";		
+		$mail->Username = "postmaster@healthtouch.me";
+		$mail->Password = "aerotech1992-"; 
+		$mail->setFrom('no-reply@healthtouch.me', 'Healthtouch Service');
+		$mail->addAddress("elias.akin@gmail.com");
+		$mail->addReplyTo('no-reply@healthtouch.me', 'some');	
+		$mail->isHTML(true);
+		//$mail->SMTPSecure = 'tls';
+		$mail->Port = 25;                               // Set email format to HTML
+		$message = "<p><strong>Dear HMO,</strong></p>
+		<div>
+		<div>You have new encounter entry, Batch Number: '<strong><span style=\"color: #ff6600;\">".$transBatch."</span></strong>' from <strong><span style=\"color: #333399;\">".$pname."</span></strong>. This email does not mean you have only one encounter as all encounter is summarized into a batch. Please login to view details.</div>
+		<div><span style=\"color: #999999;\">Kindly ignore if you have already checked in.</span></div>
+		</div>";
+		$mail->Subject = 'Encounter Alert';
+		$mail->Body = $message;	
+		if(!$mail->send()) {
+			echo "Something happened";
+			echo "Mailer Error: " . $mail->ErrorInfo;
+			//error_log('Mailer Error: ' . $mail->errorMessage());
+			/*$app->flash("error", "We're having trouble with our mail servers at the moment.  Please try again later, or contact us directly by phone.");
+			error_log('Mailer Error: ' . $mail->errorMessage());
+			$app->halt(500);*/
+		}else{
+			echo "email sent";
+		}  
+	}catch(Exception $e){
+		echo $e->getMessage();
+	}
+	/*$transBatch = "HMO/7865656/KIH";
+	$pname = "Kyle Jay HealthCenter. Ibadan";
+	$message = "<p><strong>Dear HMO,</strong></p>
+	<div>
+	<div>You have new encounter entry, Batch Number: '<strong><span style=\"color: #ff6600;\">".$transBatch."</span></strong>' from <strong><span style=\"color: #333399;\">".$pname."</span></strong>. This email does not mean you have only one encounter as all encounter is summarized into a batch. Please login to view details.</div>
+	<div><span style=\"color: #999999;\">Kindly ignore if you have already checked in.</span></div>
+	</div>";
+	$dbn = new db();
+	if($dbn->sendThis("elias.akin@gmail.com", $message)){
+		echo "Yay!";
+	}else{
+		echo "Nay!";
+	}*/
+});
+$app->get('/api/get/states', function(Request $req, Response $resp){
+	$dbn = new db();
+	$data = $dbn->selectFromQuery("select*from state");
+	$g = '{"error":{"message":"","status":"0"}, "success":{"message":"data grabbed","code":"200"}, "content":{"data":'.$data.'}}';
+	return $dbn->responseFormat($resp,$g);
+});
+$app->get('/api/get/lgs/{stateID}', function(Request $req, Response $resp){
+	$stateID = $req->getAttribute('stateID');
+	$dbn = new db();
+	if(is_numeric($stateID)){
+		$data = $dbn->selectFromQuery("select*from lgs where stateID = '$stateID'");
+		$g = '{"error":{"message":"","status":"0"}, "success":{"message":"data grabbed","code":"200"}, "content":{"data":'.$data.'}}';
+	}else{
+		$g = '{"error":{"message":"","status":"0"}, "success":{"message":"data grabbed","code":"200"}, "content":{"data":[]}}';
+	}
+	return $dbn->responseFormat($resp,$g);
+});
 
+
+$app->get('/api/get/providers/{category}', function(Request $req, Response $resp){
+	$headers = $req->getHeaders();
+	$category = $req->getAttribute('category');
+	$dbn = new db();
+    if(true) {
+        /*$publicKey  = $headers['HTTP_PUBLICKEY'][0];
+		$username  = $headers['HTTP_USERNAME'][0];
+		$hmo = $headers['HTTP_HMOID'][0];*/
+		if(true){
+			if(is_numeric($category) || $planID == "-"){
+				if($category == "-"){
+					$sql = "select*from providers";
+				}else{
+					$sql = "select * from providers where category = '$category'";
+				}
+				$data = $dbn->selectFromQuery($sql);
+				$g = '{"error":{"message":"","status":"0"}, "success":{"message":"Data grabbed","code":"200"}, "content":{"data":'.$data.'}}';
+			}else{
+				$g = '{"error":{"message":"The search term is invalid", "status":"1"}}';
+			}
+		}else{
+			$g = '{"error":{"message":"The HMO Staff profile have not been found", "status":"1"}}';
+		}
+	}else{
+		$g = '{"error":{"message":"All Profile fields are required", "status":"1"}}';
+	}
+	return $dbn->responseFormat($resp,$g);
+});
+
+
+$app->get('/api/get/service', function(Request $req, Response $resp){
+	$stateID = $req->getAttribute('stateID');
+	$dbn = new db();
+	$data = $dbn->selectFromQuery("select*from serviceCategory");
+	$g = '{"error":{"message":"","status":"0"}, "success":{"message":"data grabbed","code":"200"}, "content":{"data":'.$data.'}}';
+	return $dbn->responseFormat($resp,$g);
+});
+
+$app->post('/api/upload/to/{id}', function(Request $req, Response $resp){
+	$id = $req->getParam('id');
+	$param = $req->getParam('body');
+	$data = json_decode($param);
+	$counter = 0;
+	$data = $data->data;
+	$dbn = new db();
+	$data = json_decode($data);
+	$Qin = $dbn->connect();
+	while($counter < count($data)){
+		$t = trim($data[$counter]);
+		if(strlen($t) > 3){
+			$sql = "insert into services (serviceName, serviceType) VALUES (:t, :id)";			
+			$f = $Qin->prepare($sql);
+			$f->bindParam(":t", $t);
+			$f->bindParam(":id", $id);
+			$f->execute();
+		}		
+		$counter++;
+	}
+	$g = '{"error":{"message":"","status":"0"}, "success":{"message":"data grabbed","code":"200"}, "content":{"data":"Total '.$counter.' was uploaded"}}';
+	return $dbn->responseFormat($resp,$g);
+});
 
 $app->options('/{routes:.+}', function ($request, $response, $args) {
 	$g = '{"error":{"message":"The Method may not have been implemented", "status":"1"}}';
